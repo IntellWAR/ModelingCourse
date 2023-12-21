@@ -1,2 +1,1 @@
-# ModelingCourse
-Modeling Course 2023/2024
+#Modeling Course 2023/2024
