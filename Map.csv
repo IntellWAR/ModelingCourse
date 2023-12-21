@@ -1,6 +1,9 @@
-R,Robot,,,,Border of the Map -,,R,R,X,X
-I,Input (Conveyor),,,The field is defined by a rectangle!,,,O,O,O,X
-O,Output (Place of discharge),,,,,,I,I,I,I
-X,Unavailable cell,,,,,,R,X,-,X
--,Empty cell,,,,,,,,,
-,,,Convert to CSV!!!,,,,,,,
+R,Robot,,,,Border of the Map -,,-,Y,-,-,Y,-,-,Y,-
+G,Input (Conveyor),,,The field is defined by a rectangle!,,,-,-,-,-,-,-,-,-,-
+Y,Output (Destination),,,,,,-,-,-,-,-,-,-,-,-
+X,Unavailable cell,,,,,,-,-,-,-,-,X,X,X,X
+-,Empty cell,,,,,,-,-,-,-,-,-,-,-,-
+,,,Convert to CSV!!!,,,,-,-,-,X,X,X,X,R,-
+,,,,,,,-,-,-,-,-,-,-,-,-
+,,,,,,,-,-,-,-,G,-,-,-,-
+,,,,,,,-,-,-,-,X,-,-,-,-
