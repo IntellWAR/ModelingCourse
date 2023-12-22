@@ -1,14 +1,19 @@
+mapfile = 'Map.csv'
+num_mails = 10000 # Кол-во посылок
+
+#Вручную прописаны пути только для корзины №1 и одного робота
+pathF = ['left','left','left','left', 'up', 'up', 'up', 'up', 'up', 'up', 'up','right']                     #Путь от конвейера к корзине
+pathC = ['down', 'right', 'right']                                                                          #От начальной координаты до конвейера
+pathB = ['left','down','down','down', 'down', 'down', 'down', 'down', 'right', 'right', 'right','right']    #От корзины до конвейера
+RID = '{}{}'.format(6, 2)   #Координаты выбранного робота
+
 import csv
 import simpy
 import random
 
+
 file = open("logfile.csv", "w")
-
 env = simpy.Environment()
-
-mapfile = 'Map.csv'
-num_mails = 5 # Кол-во посылок
-
 
 Time:int = 0
 store = simpy.Store(env, capacity=num_mails)
@@ -114,11 +119,16 @@ class Robot():
     #     yield env.timeout(1)
     def getMail(self):
         global store
-        self.mail = yield store.get()
-        print('dest:',self.mail.retDest)
-        print('Посылка №{} получена'.format(self.mail.retNum()))
-        self.updDest()
         yield env.timeout(1)
+        i = self.pos[0]
+        j = self.pos[1]
+        if '{}{}'.format(i, j) in Sources:
+            self.mail = yield store.get()
+            print('Посылка №{} получена'.format(self.mail.retNum()))
+            file.write(f'get Mail:{2};time:{env.now};RID:{self.RID};pos:{Robots[self.RID].retPos()}\n')
+            self.updDest()
+
+
     def updDest(self):
         # if self.mail == Mail(0,0):
         #     self.dest = 1
@@ -127,62 +137,60 @@ class Robot():
         # elif self.mail.retNum() != 0:
         #     self.dest = -1
         self.dest = self.mail.retDest()
-        print("dest = ", self.dest)
+        #print("dest = ", self.dest)
     def retDest(self):
         return self.dest
     def putMail(self):
-        print('Put',self.pos)
+        yield env.timeout(1)
         i = self.pos[0]
         j = self.pos[1]
         if '{}{}'.format(i,j) in Dests:
             if Dests['{}{}'.format(i,j)].retNum() == self.dest:
-                #yield env.timeout(1)
+                print('Посылка №{} доставлена в пункт №{}'.format(self.mail.retNum(), self.dest))
                 self.mail = Mail(destination=-1, number=0)
-                print('Посылка №{:0} доставлена в пункт №{:0}'.format(self.mail.retNum(), self.dest))
-                if self.mail.retNum() == num_mails - 1:
-                    return -1
+                file.write(f'put Mail:{3};time:{env.now};RID:{self.RID};pos:{Robots[self.RID].retPos()}\n')
                 self.updDest()
-        yield env.timeout(1)
+                yield env.timeout(1)
 
     def move(self, direction):
         i = self.pos[0]
         j = self.pos[1]
         if direction == "up":
-            print('вверх', self.pos)
             cell = MoveMap['{}{}'.format(i-1, j)]
             #with cell.request() as req:
                 #yield req
             swapDict('{}{}'.format(i,j), '{}{}'.format(i-1,j), MoveMap)
             self.pos[0] -= 1
+            #print('вверх', self.pos)
             #yield env.timeout(1)
 
 
         if direction == "down":
-            print('вниз', self.pos)
             #cell = MoveMap['{}{}'.format(i+1,j)]
             #with cell.request() as req:
                # yield req
             swapDict('{}{}'.format(i, j), '{}{}'.format(i+1, j), MoveMap)
             self.pos[0] += 1
+            #print('вниз', self.pos)
             #yield env.timeout(1)
 
 
         if direction == "right":
-            print('вправо', self.pos)
             cell = MoveMap['{}{}'.format(i,j+1)]
             #with cell.request() as req:
                 #yield req
             swapDict('{}{}'.format(i, j), '{}{}'.format(i, j+1), MoveMap)
             self.pos[1] += 1
+            #print('вправо', self.pos)
             #yield env.timeout(1)
 
         if direction == "left":
-            print('влево', self.pos)
-            cell = MoveMap['{}{}'.format(i,j-1)]
+            #cell = MoveMap['{}{}'.format(i,j-1)]
             #with cell.request() as req:
                 #yield req
             swapDict('{}{}'.format(i, j), '{}{}'.format(i, j-1), MoveMap)
             self.pos[1] -= 1
+            #print('влево', self.pos)
             #yield env.timeout(1)
     def type(self):
         return "Robot"
@@ -213,13 +221,9 @@ class Source():
         self.pos = pos
         global store
 
-    def produce(self):
-        for i in range(num_mails):  # Производим num_mails посылок
-            mail = Mail(number=i+1, destination=1)  # Создание товара
-            yield store.put(mail)  # Помещяем посылки в очередь на получение
-
-    def retStore(self):
-        return self.store
+    def produce(self,k):
+        mail = Mail(number=k+1, destination=1)  # Создание товара
+        yield store.put(mail)  # Помещяем посылки в очередь на получение
 
     def retPos(self):
         return self.pos
@@ -232,51 +236,54 @@ class Controller():
         self.pathC = pathC
         self.dest = 0
         self.pos = (0,0)
-        self.action = env.process(self.move())
+        self.action = env.process(self.act())
     def updRobots(self):
         self.dest = Robots[self.RID].retDest()
 
+    def act(self):
+        k = 0
+        for k in range(num_mails):
+            yield env.process(Sources['74'].produce(k))
+
+        yield env.process(self.move())
+
+
     def move(self):
         global Time
-        while True:
-            yield env.process(Sources['74'].produce())
-            a = Robots[self.RID].retPos()
-            # print('T',Time)
-            # print('RID',self.RID)
-            # print('pos',self.pos)
+        k = 0
+        while k < num_mails:
             self.updRobots()
-            print(self.dest)
+
+            #print(self.dest)
             if self.dest == -1:
-                print('назад', self.dest)
+                #print('назад')
                 yield env.process(self.backward())
                 yield env.process(Robots[self.RID].getMail())
-                file.write(f'get Mail:{2};time:{env.now};RID:{self.RID};pos:{Robots[self.RID].retPos()}\n')
             elif self.dest == 0:
-                print('Начало движения')
+                #print('Начало движения')
                 yield env.process(self.beg())
                 yield env.process(Robots[self.RID].getMail())
             elif self.dest == 1:
-                print('вперёд',self.dest)
+                #print('вперёд')
                 yield env.process(self.forward())
-                file.write(f'put Mail:{3};time:{env.now};RID:{self.RID};pos:{Robots[self.RID].retPos()}\n')
-                if Robots[self.RID].putMail() == -1:
-                    print('Доставка завершена!')
-                return 0
+                yield env.process(Robots[self.RID].putMail())
+                k += 1
 
     def beg(self):
         for nextPos in pathC:
-            Robots[self.RID].move(nextPos)
             yield env.timeout(1)
+            Robots[self.RID].move(nextPos)
             file.write(f'move:{1};time:{env.now};RID:{self.RID};pos:{Robots[self.RID].retPos()}\n')
+
     def forward(self):
         for nextPos in pathF:
-            Robots[self.RID].move(nextPos)
             yield env.timeout(1)
+            Robots[self.RID].move(nextPos)
             file.write(f'move:{1};time:{env.now};RID:{self.RID};pos:{Robots[self.RID].retPos()}\n')
     def backward(self):
         for nextPos in pathB:
-            Robots[self.RID].move(nextPos)
             yield env.timeout(1)
+            Robots[self.RID].move(nextPos)
             file.write(f'move:{1};time:{env.now};RID:{self.RID};pos:{Robots[self.RID].retPos()}\n')
 
 
@@ -297,11 +304,9 @@ Map = Map()     # Загрузка карты и парсинг по класс�
 # print("Dests:")
 # print(Dests)
 
-pathF = ['left','left','left','left', 'up', 'up', 'up', 'up', 'up', 'up', 'up','right']
-pathC = ['down', 'right', 'right']
-pathB = ['left','left','left','left', 'down', 'down', 'down', 'down', 'down', 'down', 'down','right']
+
 RID = '{}{}'.format(6, 2)
 #print(Robots[RID].retPos())
 Con = Controller(RID, pathC = pathC, pathB = pathB, pathF = pathF)
-env.run()
+env.run(until=num_mails*12*3)
 #print(Robots[RID].retPos())
