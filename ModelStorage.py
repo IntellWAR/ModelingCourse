@@ -7,10 +7,11 @@ file = open("logfile.csv", "w")
 env = simpy.Environment()
 
 mapfile = 'Map.csv'
-num_mails = 10000 # Кол-во посылок
+num_mails = 5 # Кол-во посылок
 
 
 Time:int = 0
+store = simpy.Store(env, capacity=num_mails)
 
 def swapDict(key1, key2, dict):
     temp = dict[key1]
@@ -67,7 +68,7 @@ class Map():
                 if self.data[i][j] == "G":
                     Sources['{}{}'.format(i,j)] = Source(pos = [i,j])
                     MoveMap['{}{}'.format(i, j)] = EmptyCell(pos=[i, j])
-
+                    #print(Sources['{}{}'.format(i, j)].retPos)
         # Destinationes
         num = 0
         for i in range (len(self.data)):
@@ -111,12 +112,13 @@ class Robot():
         return self.pos
     # def rotate(self):
     #     yield env.timeout(1)
-    def getMail(self, store):
-        yield env.timeout(1)
+    def getMail(self):
+        global store
         self.mail = yield store.get()
         print('dest:',self.mail.retDest)
         print('Посылка №{} получена'.format(self.mail.retNum()))
         self.updDest()
+        yield env.timeout(1)
     def updDest(self):
         # if self.mail == Mail(0,0):
         #     self.dest = 1
@@ -125,6 +127,7 @@ class Robot():
         # elif self.mail.retNum() != 0:
         #     self.dest = -1
         self.dest = self.mail.retDest()
+        print("dest = ", self.dest)
     def retDest(self):
         return self.dest
     def putMail(self):
@@ -139,6 +142,7 @@ class Robot():
                 if self.mail.retNum() == num_mails - 1:
                     return -1
                 self.updDest()
+        yield env.timeout(1)
 
     def move(self, direction):
         i = self.pos[0]
@@ -207,12 +211,12 @@ class Dest():
 class Source():
     def __init__(self, pos):
         self.pos = pos
-        self.store = simpy.Store(env, capacity=num_mails)
+        global store
 
     def produce(self):
         for i in range(num_mails):  # Производим num_mails посылок
             mail = Mail(number=i+1, destination=1)  # Создание товара
-            yield self.store.put(mail)  # Помещяем посылки в очередь на получение
+            yield store.put(mail)  # Помещяем посылки в очередь на получение
 
     def retStore(self):
         return self.store
@@ -228,56 +232,52 @@ class Controller():
         self.pathC = pathC
         self.dest = 0
         self.pos = (0,0)
+        self.action = env.process(self.move())
     def updRobots(self):
         self.dest = Robots[self.RID].retDest()
-        self.pos = Robots[self.RID].retPos()
 
     def move(self):
         global Time
         while True:
-            Time += 1
+            yield env.process(Sources['74'].produce())
             a = Robots[self.RID].retPos()
             # print('T',Time)
             # print('RID',self.RID)
             # print('pos',self.pos)
             self.updRobots()
+            print(self.dest)
             if self.dest == -1:
                 print('назад', self.dest)
-                self.backward()
-                Robots[self.RID].getMail()
-                file.write(f'get Mail:{2};time:{Time};RID:{self.RID};pos:{Robots[self.RID].retPos()}')
+                yield env.process(self.backward())
+                yield env.process(Robots[self.RID].getMail())
+                file.write(f'get Mail:{2};time:{env.now};RID:{self.RID};pos:{Robots[self.RID].retPos()}\n')
             elif self.dest == 0:
                 print('Начало движения')
-                self.beg()
-                print(Robots[self.RID].getMail())
-                Robots[self.RID].getMail()
-            else:
+                yield env.process(self.beg())
+                yield env.process(Robots[self.RID].getMail())
+            elif self.dest == 1:
                 print('вперёд',self.dest)
-                self.forward()
-                file.write(f'put Mail:{2};time:{Time};RID:{self.RID};pos:{Robots[self.RID].retPos()}')
+                yield env.process(self.forward())
+                file.write(f'put Mail:{3};time:{env.now};RID:{self.RID};pos:{Robots[self.RID].retPos()}\n')
                 if Robots[self.RID].putMail() == -1:
                     print('Доставка завершена!')
                 return 0
 
     def beg(self):
-        global Time
         for nextPos in pathC:
             Robots[self.RID].move(nextPos)
-            Time += 1
-            file.write(f'move:{1};time:{Time};RID:{self.RID};pos:{Robots[self.RID].retPos()}')
-        self.move()
+            yield env.timeout(1)
+            file.write(f'move:{1};time:{env.now};RID:{self.RID};pos:{Robots[self.RID].retPos()}\n')
     def forward(self):
         for nextPos in pathF:
             Robots[self.RID].move(nextPos)
-            Time += 1
-            file.write(f'move:{1};time:{Time};RID:{self.RID};pos:{Robots[self.RID].retPos()}')
-        self.move()
+            yield env.timeout(1)
+            file.write(f'move:{1};time:{env.now};RID:{self.RID};pos:{Robots[self.RID].retPos()}\n')
     def backward(self):
         for nextPos in pathB:
             Robots[self.RID].move(nextPos)
-            Time += 1
-            file.write(f'move:{1};time:{Time};RID:{self.RID};pos:{Robots[self.RID].retPos()}')
-        self.move()
+            yield env.timeout(1)
+            file.write(f'move:{1};time:{env.now};RID:{self.RID};pos:{Robots[self.RID].retPos()}\n')
 
 
 Walls = {}
@@ -301,7 +301,7 @@ pathF = ['left','left','left','left', 'up', 'up', 'up', 'up', 'up', 'up', 'up','
 pathC = ['down', 'right', 'right']
 pathB = ['left','left','left','left', 'down', 'down', 'down', 'down', 'down', 'down', 'down','right']
 RID = '{}{}'.format(6, 2)
-print(Robots[RID].retPos())
-Contr = Controller(RID, pathC = pathC, pathB = pathB, pathF = pathF)
-Contr.move()
-print(Robots[RID].retPos())
+#print(Robots[RID].retPos())
+Con = Controller(RID, pathC = pathC, pathB = pathB, pathF = pathF)
+env.run()
+#print(Robots[RID].retPos())
