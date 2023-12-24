@@ -1,9 +1,13 @@
 mapfile = 'Map.csv'
-num_mails = 10000 # Кол-во посылок
+num_mails = 100000  # Кол-во посылок
+expec = [0.8, 0.15, 0.05]  # Распределение весов
 
 import csv
 import simpy
 import random
+import time
+
+start_time = time.time()
 
 file = open("logfile.csv", "w")
 file.write(f'actions:1-move,2-getMail,3-putMail\n')
@@ -15,13 +19,13 @@ store = simpy.Store(env, capacity=num_mails)
 
 Walls = {}
 Robots = {}
-Sources = {} # Конвейер
-Dests = {} # Корзины
+Sources = {}  # Конвейер
+Dests = {}  # Корзины
 MoveMap = {}  # Доступная территория для передвижения
 PherMaps = {}
 is_move = 1
 is_block = 0
-k = 0 # Global syka counter
+k = 0  # Global syka counter
 
 
 # def swapDict(key1, key2, dict):
@@ -118,6 +122,7 @@ class EmptyCell():
 
     def retType(self):
         return "EmptyCell"
+
     def retPos(self):
         return self.pos
 
@@ -128,6 +133,7 @@ class Wall():
 
     def retPos(self):
         return self.pos
+
 
 class PheromoneCell():
     def __init__(self, pos, up_pher=0.0, down_pher=0.0, left_pher=0.0, right_pher=0.0, holding_pher=0.0):
@@ -239,9 +245,11 @@ class Robot():
         if '{}{}'.format(i, j) in Sources:
             is_move = 0
             self.mail = yield store.get()
-            print('Посылка №{} получена'.format(self.mail.retNum()))
+            if self.mail.retNum() % 100 == 0:
+                print('Посылка №{} получена'.format(self.mail.retNum()))
             file.write(f'{2};{env.now};{self.RID};{self.pos[0]};{self.pos[1]}\n')
             self.updWeights(PherMap=PherMaps[f'{self.dest}'], pos=self.pos, saved_path=self.saved_path)
+            self.saved_path = []
             self.updDest()
             yield env.timeout(1)
         else:
@@ -250,6 +258,7 @@ class Robot():
     def updWeights(self, saved_path, pos, PherMap):
         i = pos[0]
         j = pos[1]
+        PherMap.decreaseAll()
         for direction in saved_path[::-1]:
             if direction == 'hold':
                 continue
@@ -274,7 +283,7 @@ class Robot():
         return self.dest
 
     def putMail(self):
-        #yield env.timeout(1)
+        # yield env.timeout(1)
         global is_move
         global k
         i = self.pos[0]
@@ -283,11 +292,18 @@ class Robot():
             if Dests['{}{}'.format(i, j)].retNum() == self.dest:
                 is_move = 0
                 k += 1
-                print('Посылка №{} доставлена в пункт №{}'.format(self.mail.retNum(), self.dest))
+                if self.mail.retNum() % 100 == 0:
+                    print('Посылка №{} доставлена в пункт №{}'.format(self.mail.retNum(), self.dest))
+                    if self.mail.retNum() == num_mails:
+                        end_time = time.time()
+                        print('Доставка завершена,\n модельное время = {},\n реальное время = {:.2f}c'.format(env.now,
+                                                                                                              end_time - start_time))
                 self.mail = Mail(destination=-1, number=0)
                 file.write(f'{3};{env.now};{self.RID};{self.pos[0]};{self.pos[1]}\n')
                 self.updWeights(PherMap=PherMaps[f'{self.dest}'], pos=self.pos, saved_path=self.saved_path)
+                self.saved_path = []
                 self.updDest()
+
                 yield env.timeout(1)
             else:
                 is_move = 1
@@ -327,7 +343,7 @@ class Robot():
             # print('вниз', self.pos)
 
         if direction == "right":
-            if MoveMap['{}{}'.format(i, j+1)].retType() == "Robot":
+            if MoveMap['{}{}'.format(i, j + 1)].retType() == "Robot":
                 is_block = 1
                 return 0
             is_block = 0
@@ -341,7 +357,7 @@ class Robot():
             # print('вправо', self.pos)
 
         if direction == "left":
-            if MoveMap['{}{}'.format(i, j-1)].retType() == "Robot":
+            if MoveMap['{}{}'.format(i, j - 1)].retType() == "Robot":
                 is_block = 1
                 print(is_block)
                 return 0
@@ -396,29 +412,30 @@ class Source():
         global store
 
     def produce(self, k, values):
-        mail = Mail(number=k + 1, destination=random.choice(values))  # Создание товара
+        mail = Mail(number=k + 1, destination=random.choices(values, expec)[0])  # Создание товара
         yield store.put(mail)  # Помещяем посылки в очередь на получение
 
     def retPos(self):
         return self.pos
 
+
 def act():
     global PherMaps
-    for dest in range (len(Dests)):
-        PherMaps[f'{dest+1}'] = PherMap()
-        PherMaps[f'{dest+1}'].create()
+    for dest in range(len(Dests)):
+        PherMaps[f'{dest + 1}'] = PherMap()
+        PherMaps[f'{dest + 1}'].create()
         # for key, value in PherMaps[f'{dest}'].PheromoneMap.items():
         #     print(key, value)
 
     PherMaps[f'{-1}'] = PherMap()
-    PherMaps[f'{-1}'].create() # Обратный путь
+    PherMaps[f'{-1}'].create()  # Обратный путь
 
     dest_nums = []
     for value in Dests.values():
         dest_nums.append(value.retNum())
     k = 0
     for k in range(num_mails):
-        yield env.process(Sources['74'].produce(k,dest_nums))
+        yield env.process(Sources['74'].produce(k, dest_nums))
 
     Con = {}
     for key in Robots.keys():
@@ -435,7 +452,6 @@ class Controller():
     def updRobots(self):
         self.dest = Robots[self.RID].retDest()
 
-
     def move(self):
         global Time
         global k
@@ -448,7 +464,8 @@ class Controller():
                 if is_move == 1:
                     ignore_dir = []
                     while True:
-                        dir = PherMaps[f'{-1}'].PheromoneMap['{}{}'.format(self.pos[0], self.pos[1])].chooseDirection(ignore_dir)
+                        dir = PherMaps[f'{-1}'].PheromoneMap['{}{}'.format(self.pos[0], self.pos[1])].chooseDirection(
+                            ignore_dir)
                         yield env.process(Robots[self.RID].move(dir))
                         if is_block == 1:
                             ignore_dir.append(dir)
@@ -463,7 +480,8 @@ class Controller():
                 if is_move == 1:
                     ignore_dir = []
                     while True:
-                        dir = PherMaps[f"{self.dest}"].PheromoneMap['{}{}'.format(self.pos[0], self.pos[1])].chooseDirection(ignore_dir)
+                        dir = PherMaps[f"{self.dest}"].PheromoneMap[
+                            '{}{}'.format(self.pos[0], self.pos[1])].chooseDirection(ignore_dir)
                         yield env.process(Robots[self.RID].move(dir))
                         if is_block == 1:
                             ignore_dir.append(dir)
@@ -471,26 +489,6 @@ class Controller():
                             file.write(f'{1};{env.now};{self.RID};{self.pos[0]};{self.pos[1]}\n')
                             yield env.timeout(1)
                             break
-
-
-    #  # Статичный путь
-    # def beg(self):
-    #     for nextPos in pathC:
-    #         yield env.timeout(1)
-    #         yield env.process(Robots[self.RID].move(nextPos))
-    #         file.write(f'move:{1};time:{env.now};RID:{self.RID};pos:{Robots[self.RID].retPos()}\n')
-    #
-    # def forward(self):
-    #     for nextPos in pathF:
-    #         yield env.timeout(1)
-    #         yield env.process(Robots[self.RID].move(nextPos))
-    #         file.write(f'move:{1};time:{env.now};RID:{self.RID};pos:{Robots[self.RID].retPos()}\n')
-    #
-    # def backward(self):
-    #     for nextPos in pathB:
-    #         yield env.timeout(1)
-    #         yield env.process(Robots[self.RID].move(nextPos))
-    #         file.write(f'move:{1};time:{env.now};RID:{self.RID};pos:{Robots[self.RID].retPos()}\n')
 
 
 Map = Map()  # Загрузка карты и парсинг по классам
@@ -505,9 +503,5 @@ Map = Map()  # Загрузка карты и парсинг по классам
 # print(Dests)
 
 
-#RID = '{}{}'.format(6, 2)
-# print(Robots[RID].retPos())
-# Con = Controller(RID, pathC=pathC, pathB=pathB, pathF=pathF)
 env.process(act())
 env.run()
-# print(Robots[RID].retPos())
